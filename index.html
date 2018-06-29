@@ -1,0 +1,577 @@
+﻿<html>
+	<head>
+		<script>
+			//A test project for experimenting with audio in HTML5, based on examples from D0kt0r0 at McMaster University, samples found royalty free online
+			var maxWidth = 800; //Max canvas width
+			var maxHeight = 412; //Max canvas height
+			
+			var titleFont = "bold 14px Arial"; //The font for the title
+			var titleColor = "white"; //Fill color of title
+			
+			var regularFont = "14px Arial"; //Regular font
+			
+			var currFunction = 0; //Current function index
+			var functionOrder = []; //A dynamic list of things to do on each beat
+			var constantLogic = ""; //A single string to store logic that runs every frame
+			var demoPat = ["playSample('bd.wav',0,1,0);oscTone(o2,g2,20,-12,1);","playSample('bd.wav',0,1,1);if(mouseDown){tempo=15;}else{tempo=30;}","playSample('cymbal.wav',0,1,0.5);oscTone(o3,g3,mouseX+mouseY,-24,1);"]; //An example pattern to work with
+			var demoPat2 = ["playSample('bd.wav',0,mouseX / 400.0,out);playSample('cymbal.wav',0,mouseY / 200.0,1 - out);out=1-out;"]; //A second demo
+			var demoPat3 = ["oscTone(o3,g3,440 + (frameCount % 220),-12,1/4);"];
+			var demoPat4 = ["oscTone(o2,g2,10 + (frameCount%10)*10,-12,1/8)", "oscTone(o2,g2,13 + (frameCount%10)*10,-12,1/8)", "oscTone(o2,g2,17 + (frameCount%10)*10,-12,1/8)", "oscTone(o2,g2,20 + (frameCount%10)*10,-12,1/8)", "oscTone(o2,g2,30 + (frameCount%10)*10,-12,1/8)", "oscTone(o2,g2,30 + (frameCount%10)*20,-12,1/8)", "oscTone(o3,g3,50 + (frameCount%10)*10,-12,1/8)", "oscTone(o3,g3,100 + (frameCount%10)*10,-12,1/8)", "oscTone(o3,g3,1000 + ((frameCount%1000) - 500)*2,-12,1/8)"];
+			var demoPat5 = ["x = 1.1 * (frameCount % (maxWidth + 60) - 60);y = maxHeight/2 + Math.abs(lasty + Math.random() * 10 - Math.random() * 10); ctx.fillStyle='hsla(' + x % 360 + ', 100%,50%,0.75)'; circle(x,y,16);lastx = x; lasty = y - maxHeight/2;","ctx.fillStyle='hsla(' + Math.random() * 360 + ',100%,50%,0.5)';ctx.fillRect(Math.random() * maxWidth, Math.random() * maxHeight, 12, 12);"];
+			var demoPat6 = ["oscTone(o2,g2,10 + (frameCount%10)*10,-12,1/8)", "oscTone(o2,g2,13 + (frameCount%10)*10,-12,1/8)", "oscTone(o2,g2,17 + (frameCount%10)*10,-12,1/8)", "oscTone(o2,g2,20 + (frameCount%10)*10,-12,1/8)", "oscTone(o2,g2,30 + (frameCount%10)*10,-12,1/8)", "oscTone(o2,g2,30 + (frameCount%10)*20,-12,1/8)", "oscTone(o3,g3,50 + (frameCount%10)*10,-12,1/8)", "oscTone(o3,g3,100 + (frameCount%10)*10,-12,1/8)", "oscTone(o3,g3,1000 + ((frameCount%1000) - 500)*2,-12,1/8)", "tempo = Math.round(Math.random() * 20) + 1;"];
+			var demoPat7 = ["if(frameCount < 1000) { bx = 0; by = 0; bwidth = 16; bhdir = 1; bvdir = 1; spd = 3;} if (mouseDown == true) { frameCount = 1000; } ctx.clearRect(0,0,maxWidth,maxHeight); ctx.fillStyle='red'; ctx.fillRect(bx - bwidth/2, by - bwidth / 2, bwidth, bwidth);ctx.fillStyle='white'; ctx.fillRect(mouseX - bwidth*5, maxHeight - bwidth*1.5, bwidth*10, bwidth);tempo=1;if (bvdir == 1) { by += spd; if (bx >= mouseX - bwidth*5 && bx <= mouseX + bwidth * 5 && by >= maxHeight - bwidth * 1.5 && by <= maxHeight - bwidth*0.5) {bvdir = -1; spd = spd + 1; playSample('bd.wav', 0, Math.random() * 2 + 0.1, Math.random() * 1); } if (by > maxHeight) { by = 0; bvdir = -1; spd = 3; playSample('cymbal.wav', 0, Math.random() * 2 + 0.1, Math.random() * 1); } } else { by -= spd; if (by < 0) { bvdir = 1;  spd = spd + 1; playSample('drum.wav', 0, Math.random() * 2 + 0.1, Math.random() * 1); } } if (bhdir == 1) { bx += spd; if (bx > maxWidth) { bhdir = -1;  spd = spd + 1; playSample('snare.wav', 0, Math.random() * 2 + 0.1, Math.random() * 1); } } else { bx -= spd; if (bx < 0) {bhdir = 1;  spd = spd + 1; playSample('snare.wav', 0, Math.random() * 2 + 0.1, Math.random() * 1); } };"];
+			
+			var frameCount = 0; //How many frames gone by?
+			var tempo = 120; //beat every 2 seconds
+			
+			var debug = false; //Are we debugging?
+			var wasBeat = false; //Was a beat played last f	rame?
+			
+			var samples = ["bd.wav", "cymbal.wav", "drum.wav", "snare.wav"]; //An array of default sounds, all creative commons 0 / public domain from FreeSound.org
+			var sampleBank = []; // an associative array to hold sound files we load and decode
+			
+			var patternEnd = 0; //End position 
+			
+			var paused = false; //paused music?
+			
+			function setup() {
+				canvas = document.getElementById("mycanvas");
+				ctx = canvas.getContext("2d");
+				context = ctx; //Allow alternate spelling for people used to writing context
+				
+				ac = new AudioContext();
+				
+				g1 = ac.createGain();
+				p1 = ac.createStereoPanner();
+				o1 = ac.createOscillator();
+				o1.type = 'sine';
+				o1.connect(g1); //Connect oscillator to destination
+				o1.start();
+				g1.gain.value = 0;
+				g1.connect(p1);
+				p1.connect(ac.destination);
+				
+				g2 = ac.createGain();
+				p2 = ac.createStereoPanner();
+				o2 = ac.createOscillator();
+				o2.type = 'sawtooth';
+				o2.connect(g2);
+				o2.start();
+				g2.gain.value = 0;
+				g2.connect(p2);
+				p2.connect(ac.destination);
+				
+				g3 = ac.createGain();
+				p3 = ac.createStereoPanner();
+				o3 = ac.createOscillator();
+				o3.type = 'square';
+				o3.connect(g3);
+				o3.start();
+				g3.gain.value = 0;
+				g3.connect(p3);
+				p3.connect(ac.destination);
+				
+				g4 = ac.createGain();
+				p4 = ac.createStereoPanner();
+				o4 = ac.createOscillator();
+				o4.type = 'triangle';
+				o4.connect(g4);
+				o4.start();
+				g4.gain.value = 0;
+				g4.connect(ac.destination);
+				g4.connect(p4);
+				p4.connect(ac.destination);
+				
+				//o.o.start(); //This starts it
+				//o.stop(); //This kills it! Gotta remake and re-connect
+				//o.frequency.value = 220f; //Frequency of the oscillator
+				
+				//Mouse variables
+				mouseX = 0;
+				mouseY = 0;
+				wasMouseDown = false;
+				mouseDown = false;
+				
+				//Set up mouse reactions
+				canvas.onmousedown = respondToMouseDown;
+				canvas.onmousemove = respondToMouseMove;
+				canvas.onmouseup = respondToMouseUp;
+				
+				//Draw the text on screen
+				drawText();
+				
+				loadSamples(); //Load default samples in
+				
+				//Set up refresh screen timer to display the data and allow interaction to appear
+				var looptime = 1000/60; //60fps
+				myInterval = setInterval(function() { audioloop(); }, looptime); //Run the loop
+			}
+			
+			function respondToMouseDown(ev) {
+				mouseDown = true;
+				updateMouse(ev);
+			}
+			
+			function respondToMouseMove(ev) {
+				updateMouse(ev);
+			}
+			
+			function respondToMouseUp(ev) {
+				mouseDown = false;
+				updateMouse(ev);
+			}
+			
+			function updateMouse(ev) {
+				//Update mouse position variables
+				mouseX = ev.clientX - canvas.offsetLeft;
+				mouseY = ev.clientY - canvas.offsetTop;
+
+				if (!mouseDown) {
+					wasMouseDown = false;
+				}
+			}
+			
+			function drawText() {
+				//Draws the info and title
+				
+				var title = "Code Music! open web console & try demo() or demo2() or demolist()";
+				
+				//Draw title
+				ctx.fillStyle = titleColor;
+				ctx.font = titleFont;
+				ctx.fillText(title, 16, 16);
+				
+				var description = "Direct Access: Oscillator, Gain, and Pan nodes (with description, only play one tone each)";
+				var yoff = 36;
+				
+				ctx.fillText(description, 32, yoff);
+				
+				description = "Oscillators (default type): o1 (sine), o2 (sawtooth), o3 (square), o4 (triangle, glitchy?)";
+				yoff += 24;
+				ctx.font = regularFont;
+				
+				ctx.fillText(description, 42, yoff);
+				
+				description = "Gains: g1, g2, g3, g4. eg: g1.gain.setTargetAtTime(1, ac.currentTime+5, 3);";
+				yoff += 24;
+				
+				ctx.fillText(description, 42, yoff);
+				
+				description = "Pans: p1, p2, p3, p4. eg: p.pan.value = 1;";
+				yoff += 24;
+				
+				ctx.fillText(description, 42, yoff);
+				
+				description = "Variables: tempo (not BPM) patternEnd (readonly) debug (true/false) frameCount (increases by 60/s)";
+				yoff += 24;
+				ctx.font = titleFont;
+				
+				ctx.fillText(description, 32, yoff);
+				
+				description = "Functions: hush(); (gain 0 all channels and clear pattern) scale(val,min1,max1,min2,max2); help();";
+				yoff += 24;
+				ctx.font = titleFont;
+				
+				ctx.fillText(description, 32, yoff);
+				
+				description = "fadeAll(volume, starttime, timeconstant);";
+				yoff += 24;
+				ctx.font = regularFont;
+				
+				ctx.fillText(description, 42, yoff);
+				
+				description = "panAll(pan, starttime, timeconstant);";
+				yoff += 24;
+				ctx.font = regularFont;
+				
+				ctx.fillText(description, 42, yoff);
+				
+				description = "oscTone(oscillator, gainnode, frequency, db, dur);";
+				yoff += 24;
+				
+				ctx.fillText(description, 42, yoff);
+				
+				description = "slideOsc(oscillator, target frequency, time);";
+				yoff += 24;
+				
+				ctx.fillText(description, 42, yoff);
+				
+				description = "playSample(file url, db, rate, pan); (use defaultSamples() to check existing samples or use URL)";
+				yoff += 24;
+				
+				ctx.fillText(description, 42, yoff);
+				
+				description = "Patterns: checkPattern();	 clearPattern(); (can stack commands in one entry, and use logic eg: mouseDown!)";
+				yoff += 24;
+				ctx.font = titleFont;
+				
+				ctx.fillText(description, 32, yoff);
+				
+				description = "addToPattern(function(s) as string);	 removeFromPattern(index to remove);";
+				yoff += 24;
+				ctx.font = regularFont;
+				
+				ctx.fillText(description, 42, yoff);
+				
+				description = "appendPattern(index, function(s) string to append);";
+				yoff += 24;
+				
+				ctx.fillText(description, 42, yoff);
+				
+				description = "replacePattern(index, function(s) as string);";
+				yoff += 24;
+				
+				ctx.fillText(description, 42, yoff);
+				
+				description = "Frequencies: Either number (eg: 440) or midinote (eg: midicps(64)) or mouseX and mouseY";
+				yoff += 24;
+				ctx.font = titleFont;
+				
+				ctx.fillText(description, 32, yoff);
+			}
+			
+			function hush() {
+				g1.gain.value = 0;
+				g2.gain.value = 0;
+				g3.gain.value = 0;
+				g4.gain.value = 0;
+				
+				clearPattern();
+			}
+			
+			function demo() {
+				functionOrder = demoPat;
+				console.log("Demo contents: " + demoPat);
+			}
+			
+			function demo2() {
+				console.log("Creating variable 'out'");
+				console.log("Setting tempo to 7");
+				out = 0;
+				tempo = 7;
+				functionOrder = demoPat2;
+				console.log("Demo contents: " + demoPat2);
+			}
+			
+			function demo3() {
+				console.log("Setting tempo to 15");
+				tempo = 15;
+				functionOrder = demoPat3;
+				console.log("Demo contents: " + demoPat3);
+			}
+			
+			function demo4() {
+				console.log("Setting tempo to 7");
+				tempo = 7;
+				functionOrder = demoPat4;
+				console.log("Demo contents: " + demoPat4);
+			}
+			
+			function demo5() {
+				console.log("Creating variable 'lastx'");
+				console.log("Creating variable 'lasty'");
+				console.log("Setting tempo to 2");
+				tempo = 2;
+				lastx = 0;
+				lasty = 0;
+				functionOrder = demoPat5;
+				console.log("Demo contents: " + demoPat5);
+			}
+			
+			function demo6() {
+				console.log("Setting tempo to 7");
+				tempo = 7;
+				functionOrder = demoPat6;
+				console.log("Demo contents: " + demoPat6);
+			}
+			
+			function demo7() {
+				console.log("Click to start or wait 1000 frames! Forced tempo = 1");
+				tempo = 1;
+				bx = 0;
+				by = 0;
+				bwidth = 16;
+				bhdir = 1;
+				bvdir = 1;
+				spd = 3;
+				functionOrder = demoPat7;
+				console.log("Demo contents: " + demoPat7);
+			}
+			
+			function customDemo(demovar) {
+				functionOrder = demovar;
+			}
+			
+			function demolist() {
+				console.log("demo(); //Simple pattern");
+				console.log("demo2(); //Using mouseX and mouseY to control sounds");
+				console.log("demo3(); //Using frameCount");
+				console.log("demo4(); //Using frameCount");
+				console.log("demo5(); //Graphical demo based on frameCount");
+				console.log("demo6(); //Simple modification to 4 to randomly change tempo");
+				console.log("demo7(); //Musical block bounce, eventually gets too fast and goes through paddle!");
+			}
+			
+			function help() {
+				console.log("Context name: ctx");
+				console.log("Canvas width: maxWidth");
+				console.log("Canvas height: maxHeight");
+				console.log("Additional variables:");
+				console.log("paused = false; //Set to true to pause evaluations or true to run!");
+				console.log("constantlogic = (any string); //A variable storing code to run every frame (not every beat!). Use at own risk!");
+				console.log("Additional functions:");
+				console.log("getPattern(index); //Returns the contents of a pattern");
+				console.log("injectPattern(index, function(s) as string); //Add pattern part at index");
+				console.log("replaceInPattern(int index, string original, string new); //Replace any string in a pattern, dangerous!")
+				console.log("replaceInPatterns(string original, string new); //Replaces any string in ALL patterns, mega dangerous!")
+				console.log("fitPattern(targetTempo); //Adjusts the 'tempo' value desired to fit whole pattern")
+				console.log("circle(x,y,r); //Draw a filled circle");
+				console.log("drawText(); //Redraw instructions");
+				console.log("exportPattern(); //Prints the whole pattern to strings in an easy to share format");
+				console.log("customDemo(demovar); //Pass your own demo var to play it!");
+				console.log("togglePause(); //Turn pause on/off");
+			}
+			
+			function fadeAll(volume, starttime, timeconstant) {
+				g1.gain.setTargetAtTime(volume, ac.currentTime + starttime, timeconstant);
+				g2.gain.setTargetAtTime(volume, ac.currentTime + starttime, timeconstant);
+				g3.gain.setTargetAtTime(volume, ac.currentTime + starttime, timeconstant);
+				g4.gain.setTargetAtTime(volume, ac.currentTime + starttime, timeconstant);
+			}
+			
+			function panAll(pan, starttime, timeconstant) {
+				p1.pan.setTargetAtTime(pan, ac.currentTime + starttime, timeconstant);
+				p2.pan.setTargetAtTime(pan, ac.currentTime + starttime, timeconstant);
+				p3.pan.setTargetAtTime(pan, ac.currentTime + starttime, timeconstant);
+				p4.pan.setTargetAtTime(pan, ac.currentTime + starttime, timeconstant);
+			}
+			
+			// from http://www.d0kt0r0.net/teaching/javascript-webaudio-basics.html
+			midicps = function(x) { return 440 * (Math.pow(2,(x-69)/12)); };
+			dbamp = function(x) { return Math.pow(10,x/20); };
+			
+			// based on/from http://www.d0kt0r0.net/teaching/javascript-webaudio-basics.html
+			function oscTone(osc,ga,freq,db,dur) {
+				actualFreq = freq;
+				
+				osc.frequency.value = actualFreq;
+				ga.gain.value = 0;
+				
+				var now = ac.currentTime;
+				ga.gain.setValueAtTime(0,now);
+				ga.gain.setTargetAtTime(dbamp(db),now + (dur/2), dur/4); // fade in
+				ga.gain.setTargetAtTime(0,now + (dur), dur/4); // fade out
+			}
+			
+			function slideOsc(osc, freq, time) {
+				actualFreq = freq;
+				
+				var now = ac.currentTime;
+				osc.frequency.setValueAtTime(actualFreq, now + time, time/2);
+			}
+			
+			function loadSamples() {
+				//Load the default samples in
+				for (var i = 0; i < samples.length; i++) {
+					loadSample(samples[i]);
+				}
+			}
+			
+			//From http://www.d0kt0r0.net/teaching/javascript-webaudio-basics.html
+			function loadSample(url) {
+			  var request = new XMLHttpRequest();
+			  request.open('GET', url, true);
+			  request.responseType = 'arraybuffer';
+			  request.onload = function() {
+				var audioData = request.response;
+					ac.decodeAudioData(audioData, function(buffer) {
+					var obj = {"name":url, "bank":buffer};
+					sampleBank.push(obj);
+					},function(e){ console.log("Error decoding audio data" + e.err); }
+					);
+				};
+			  request.send();
+			}
+			
+			function findSample(url) {
+				for (var i = 0; i < sampleBank.length; i++) {
+					if (sampleBank[i].name == url) {
+						return sampleBank[i].bank;
+					}
+				}
+				
+				//If we get here we didn't find it
+				loadSample(url);
+			}
+			
+			//From http://www.d0kt0r0.net/teaching/javascript-webaudio-basics.html			
+			function playSample(url,db,rate, pan) {
+				var foundSample = findSample(url);
+				if (foundSample.length > 0) {
+					//If we have the sample
+					var s = ac.createBufferSource();
+					s.playbackRate.value = rate;
+					var g = ac.createGain();
+					p = ac.createStereoPanner();
+					p.pan.value = pan;
+					s.connect(g);
+					g.connect(p);
+					p.connect(ac.destination);
+					s.buffer = foundSample;
+					g.gain.value = 0;
+					s.start();
+					var now = ac.currentTime;
+					var amp = dbamp(db);
+					g.gain.setValueAtTime(0,now);
+					g.gain.setTargetAtTime(amp,now+0.001,0.001); // 1 ms fade-in
+				}
+			}
+			
+			function defaultSamples() {
+				for (var i = 0; i < samples.length; i++) {
+					console.log(samples[i]);
+				}
+			}
+			
+			function checkPattern() {
+				console.log("functionOrder.Length: " + functionOrder.length);
+				if (functionOrder.length > 0) {
+					for (var i = 0; i < functionOrder.length; i++) {
+						console.log(functionOrder[i]);
+					}
+				}
+			}
+			
+			function addToPattern(str) {
+				functionOrder.push(str);
+			}
+			
+			function removeFromPattern(index) {
+				if (functionOrder.length > 0) functionOrder.splice(index, 1);
+			}
+			
+			function replacePattern(index, str) {
+				functionOrder[index] = str;
+			}
+			function appendPattern(index, str) {
+				functionOrder[index] = functionOrder[index] + str;
+			}
+			
+			function clearPattern() {
+				functionOrder = [];
+			}
+			
+			function getPattern(index) {
+				return functionOrder[index];
+			}
+			
+			function injectPattern(index, pat) {
+				functionOrder.splice(index, 0, pat);
+			}
+			
+			function fitPattern(target) {
+				if (functionOrder.length > 0) tempo = target / functionOrder.length;
+			}
+			
+			function replaceInPattern(i, oldstr, newstr) {
+				functionOrder[i] = functionOrder[i].replace(oldstr, newstr);
+			}
+			
+			function replaceInPatterns(oldstr, newstr) {
+				if (functionOrder.length > 0) {
+					for (var i = 0; i < functionOrder.length; i++) {
+						functionOrder[i] = functionOrder[i].replace(oldstr, newstr);
+					}
+				}
+			}
+			
+			function togglePause() {
+				paused = !paused;
+			}
+			
+			function audioloop() {
+				//The "main program loop"				
+				ctx.clearRect(maxWidth - 256, 0, 256, 22);
+				
+				ctx.fillStyle = titleColor;
+				ctx.font = regularFont;
+				ctx.fillText("mouse: " + mouseX + "," + mouseY, maxWidth - 132, 12);
+				ctx.fillText("tempo: " + tempo, maxWidth - 256, 12);
+				
+				//Update some variables
+				patternEnd = functionOrder.length - 1;
+								
+				//Count frames
+				frameCount += 1;
+				
+				//Run any constant logic
+				if (constantLogic != "") eval(constantLogic);
+				
+				//Draw beats
+				if (wasBeat) {
+					//Slight delay to be seen
+					ctx.fillStyle = "hsl(220, 100%, 75%)";
+					wasBeat = false;
+				}
+				
+				if (frameCount % tempo == 0) {
+					//Run beat code
+					if (functionOrder.length > 0) {
+						if (currFunction > functionOrder.length) currFunction = 0; //Safety check
+						
+						if (debug) console.log(functionOrder[currFunction]);
+						
+						if (!paused) eval(functionOrder[currFunction]);
+						
+						currFunction += 1;
+						if (currFunction > functionOrder.length) currFunction = 0; //We went over the end!
+					}
+					
+					//frameCount -= tempo; //Actually let's just let it keep going up
+					wasBeat = true;
+					
+					if (frameCount < 0) frameCount = 0;
+					
+					ctx.fillStyle = "hsl(220, 100%, 75%)";
+				} else {
+					ctx.fillStyle = "hsl(220, 100%, 25%)";
+				}
+				
+				ctx.fillRect(maxWidth - 164, 4, 12, 12);
+			}			
+		
+			//Misc & Graphical functions			
+			function scale(x, min1, max1, min2, max2) {
+				return min2 + (x-min1)*(max2-min2)/(max1-min1);
+			}
+			
+			function exportPattern() {
+				var stringprint = "";
+				var stringprint2 = "var demoPatN = [";
+			
+				if (functionOrder.length > 0) {
+					for (var i = 0; i < functionOrder.length; i++) {
+						stringprint += 'addToPattern("' + functionOrder[i] + '");';
+						stringprint2 += '"' + functionOrder[i] + '"';
+						if (i < functionOrder.length - 1) stringprint2 += ", "; 
+					}
+					
+					console.log("step-by-step: \n" + stringprint); //All at once for easy copy and paste
+					console.log("demovar format: \n" + stringprint2 + "];");
+				}
+			}
+			
+			function circle(x,y,r) {
+				ctx.beginPath();
+				ctx.moveTo(x,y);
+				ctx.arc(x,y,r,0,Math.PI*2);
+				ctx.closePath();
+				ctx.fill();
+			}
+		
+		</script>
+	</head>
+	<body onload="setup();">
+	<canvas width="800" height="412" style="background-color:hsla(220, 100%, 50%, 1);" id="mycanvas"></canvas>
+	</body>
+</html>
